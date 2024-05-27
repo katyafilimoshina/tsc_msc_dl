@@ -18,8 +18,9 @@ and conducted experiments on sampling from Banana and Funnel distributions by MS
 
 
 ## Code Organization
-* `distributions/:` Contains code for generating and handling synthetic distributions (funnel, banana, gaussian mixture)
-* `samplers/:` Contains code for basic MCMC sampling methods (HMC, iSIR, NUTS) 
+* `distributions.py`: Contains code for generating and handling synthetic distributions (funnel, banana, gaussian mixture, cauchy)
+* `samplers.py`: Contains code for basic MCMC sampling methods (HMC, iSIR, NUTS)
+* `metrics.py`: Contains code for ESS, EMD, ESTV calculation and visualization
 * `msc/`: ...
 * `tsc/`: ...
 * `notebooks/`: Contains notebooks TSC.ipynb and MSC.ipynb with experiments on TSC and MSC.
