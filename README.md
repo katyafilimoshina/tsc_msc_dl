@@ -26,8 +26,8 @@ and conducted experiments on sampling from Banana and Funnel distributions by MS
   * `TSC_RealNVP_and_Experiments.ipynb`: TSC with RealNVP training loop and experiments on Banana and Funnel in dim=2, 10, 50, 100.
   * `MSC_and_Affine_TSC.ipynb`, `MSC_experiments_metrics.ipynb`: MSC training loop and experiments on Banana and Funnel.
   * `TSC_Affine.ipynb`: TSC with Affine transformation training loop and experiments on Banana and Funnel.
+  * `ISIR_and_HMC_experiments.ipynb`: Experiments on HMC and iSIR on Banana and Funnel.
   * `MALA_experiments.ipynb`: Experiments on MALA on Banana and Funnel.
-  * `HMC_ISIR_experiments.ipynb`: Experiments on HMC and iSIR on Banana and Funnel.
  
 
 
