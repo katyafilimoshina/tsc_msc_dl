@@ -21,7 +21,7 @@ and conducted experiments on sampling from Banana and Funnel distributions by MS
 * `distributions.py`: Contains code for generating and handling synthetic distributions (funnel and banana).
 * `samplers.py`: Contains code for basic MCMC sampling methods (HMC, iSIR, NUTS).
 * `metrics.py`: Contains code for ESS, EMD, ESTV calculation and visualization.
-* `experiments/`: Contains notebooks with MSC and TSC (with Affine transform and RealNVP) training loops and experiments:
+* `experiments/`: Contains notebooks with MSC and TSC (with Affine transform and RealNVP) training loops and all the experiments:
   * `True_Banana_Funnel.ipynb`: Check of Banana and Funnel distributions classes.
   * `TSC_RealNVP_and_Experiments.ipynb`: TSC with RealNVP training loop and experiments on Banana and Funnel in dim=2, 10, 50, 100.
   * `MSC_and_Affine_TSC.ipynb`, `MSC_experiments_metrics.ipynb`: MSC training loop and experiments on Banana and Funnel.
