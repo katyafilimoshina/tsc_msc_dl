@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
 
 
+torch.manual_seed(926)
+
+
 class Funnel(object):
     """
     Funnel distribution.
@@ -51,27 +54,25 @@ class Funnel(object):
                    levels=3,
                    alpha=1., colors='midnightblue', linewidths=1)
 
-    def visualize_dist(self, s=10000):
+    def visualize_dist(self, ax, s=1000, alpha=1.0, cmap="magma"):
         """
-        Visualizes Funnel distribution using sampled points
+        Visualizes Banana distribution using sampled points
         """
-        # Generate points from funnel distribution
-        points = np.transpose(self.sample(s))
-        Y = points[0]
-        X = points[1]
+        # Generate points from distribution
+        points = self.sample(s)
+        X = points[:, 0]
+        Y = points[:, 1]
 
         # Calculate the point density
-        XY = np.vstack([X,Y])
+        XY = torch.stack([points[:, 0], points[:, 1]], dim=0).numpy()
         Z = gaussian_kde(XY)(XY)
 
         # Sort the points by density, so that the densest points are plotted last
         idx = Z.argsort()
         X, Y, Z = X[idx], Y[idx], Z[idx]
 
-        plt.scatter(X, Y, c=Z, label=Z)
-        plt.colorbar()
-        plt.show()
-        plt.close()
+        ax.scatter(X, Y, c=Z, label=Z, alpha=alpha, cmap=cmap)
+
 
     def sample(self, num_samples: int) -> torch.Tensor:
         """
@@ -91,15 +92,14 @@ class Funnel(object):
         std = torch.std(target_samp, dim=0).numpy()
         m = torch.mean(target_samp, dim=0).numpy()
         return [m, std]
-    
 
 
 class Banana:
 
-    def __init__(self, b=0.02, dim=2):
+    def __init__(self, b=0.02, dim=2, sigma=10):
         self.b = b
         self.dim = dim
-        self.sigma = 10 # can be changed
+        self.sigma = sigma
 
     def log_prob(self, x: torch.FloatTensor) -> torch.FloatTensor:
         """
@@ -127,7 +127,7 @@ class Banana:
         odd = np.arange(1, self.dim, 2)
         var = torch.ones(self.dim)
         var[..., even] = self.sigma**2
-        base_dist = MultivariateNormal(torch.zeros(self.dim), torch.diag(var))
+        base_dist = D.MultivariateNormal(torch.zeros(self.dim), torch.diag(var))
         samples = base_dist.sample((s,))
         samples[..., odd] += self.b * samples[..., even]**2 - self.b * self.sigma**2
         return samples
@@ -145,7 +145,7 @@ class Banana:
                    levels=5,
                    alpha=1., colors='midnightblue', linewidths=1)
 
-    def visualize_dist(self, s=1000):
+    def visualize_dist(self, ax, s=1000, alpha=1.0, cmap="magma"):
         """
         Visualizes Banana distribution using sampled points
         """
@@ -162,10 +162,31 @@ class Banana:
         idx = Z.argsort()
         X, Y, Z = X[idx], Y[idx], Z[idx]
 
-        plt.scatter(X, Y, c=Z, label=Z)
-        plt.colorbar()
-        plt.show()
-        plt.close()
+        ax.scatter(X, Y, c=Z, label=Z, alpha=alpha, cmap=cmap)
+
+    def visualize_dist_nf(self, ax, s=1000, alpha=1.0, nf = None, cmap="magma"):
+        """
+        Visualizes GMM distribution using sampled points and NF
+        """
+        # Generate points from distribution
+        points = self.sample(s)
+        if nf:
+          points = nf(points).detach()
+        X = points[:, 0]
+        Y = points[:, 1]
+
+        # Calculate the point density
+        XY = torch.stack([points[:, 0], points[:, 1]], dim=0).numpy()
+        Z = gaussian_kde(XY)(XY)
+
+        # Sort the points by density, so that the densest points are plotted last
+        idx = Z.argsort()
+        X, Y, Z = X[idx], Y[idx], Z[idx]
+
+        ax.scatter(X, Y, c=Z, label=Z, alpha=alpha, cmap=cmap)
+        # ax.colorbar()
+        # ax.show()
+        # ax.close()
 
     def estimate_dist(self, s=10000000):
         """
@@ -176,44 +197,164 @@ class Banana:
         std = torch.std(target_samp, dim=0).numpy()
         m = torch.mean(target_samp, dim=0).numpy()
         return [m, std]
-    
 
-class GaussianMixture:
-    def __init__(self, dim, sigma, loc):
-        self.g0 = MultivariateNormal(loc, sigma ** 2 * torch.eye(dim))
-        self.g1 = MultivariateNormal(-loc, sigma ** 2 * torch.eye(dim))
-        self.prob = 0.5
+
+class MyDistribution(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
         self.dim = dim
 
-    def sample(self, shape=(2,)):
-        idx = torch.rand(shape) < self.prob
-        samples = torch.zeros((*shape, self.dim))
-        samples[idx, :] = self.g0.sample(shape)[idx, :]
-        samples[~idx, :] = self.g1.sample(shape)[~idx, :]
-        return samples
+    def grad_log(self, x: torch.Tensor):
+        """
+        Calculates gradient of log density for given points
+        Expects log_prob function to be working in differentiable manner
+        :param x: [n_batch, dimension]
+        :return: gradients [n_batch, dimension]
+        """
+        grads = []
+        x.requires_grad = True
+        for val in x:
+            val = val.reshape(1, -1)
+            out = self.log_prob(val)
+            grad = torch.autograd.grad(out, val)
+            grads.append(grad[0].squeeze(0))
+        x.requires_grad = False
+        return torch.stack(grads, dim=0)
 
-    def probability(self, x):
-        return 0.5 * self.g0.log_prob(x).exp() + 0.5 * self.g1.log_prob(x).exp()
+
+class GMM(MyDistribution):
+    def __init__(self, dim, mu, sigma, rho=0.5):
+        super().__init__(dim)
+        cov_mat = torch.eye(dim) * sigma
+        mu_mat = torch.ones((2, dim))*mu
+        mu_mat[1, :] = -mu_mat[1, :]
+        cov_mat = torch.tile(cov_mat.unsqueeze(0), (2, 1, 1))
+        mix = D.Categorical(torch.tensor([rho, 1-rho]))
+        comp = D.MultivariateNormal(
+            mu_mat, cov_mat)
+        self.gmm = D.MixtureSameFamily(mix, comp)
 
     def log_prob(self, x):
-        return (0.5 * self.g0.log_prob(x).exp() + 0.5 * self.g1.log_prob(x).exp() + 1e-8).log()
+        return self.gmm.log_prob(x)
+
+    def sample(self, n):
+        return self.gmm.sample((n,))
+
+    def plot_2d_countour(self, ax):
+        """
+        Visualizes contour plot of Banana distribution using log p(x)
+        """
+        x = np.linspace(-20, 20, 100)
+        y = np.linspace(-10, 10, 100)
+        X, Y = np.meshgrid(x, y)
+        inp = torch.from_numpy(np.stack([X, Y], -1))
+        Z = self.log_prob(inp.reshape(-1, 2)).reshape(inp.shape[:-1])
+        ax.contour(X, Y, Z.exp(),
+                   levels=5,
+                   alpha=1., colors='midnightblue', linewidths=1)
+
+    def visualize_dist(self, ax, s=1000, alpha=1.0, cmap="magma"):
+        """
+        Visualizes Banana distribution using sampled points
+        """
+        # Generate points from distribution
+        points = self.sample(s)
+        X = points[:, 0]
+        Y = points[:, 1]
+
+        # Calculate the point density
+        XY = torch.stack([points[:, 0], points[:, 1]], dim=0).numpy()
+        Z = gaussian_kde(XY)(XY)
+
+        # Sort the points by density, so that the densest points are plotted last
+        idx = Z.argsort()
+        X, Y, Z = X[idx], Y[idx], Z[idx]
+
+        ax.scatter(X, Y, c=Z, label=Z, alpha=alpha, cmap=cmap)
+
+    def visualize_dist_nf(self, ax, s=1000, alpha=1.0, nf = None, cmap="magma"):
+        """
+        Visualizes GMM distribution using sampled points and NF
+        """
+        # Generate points from distribution
+        points = self.sample(s)
+        if nf:
+          points = nf(points).detach()
+        X = points[:, 0]
+        Y = points[:, 1]
+
+        # Calculate the point density
+        XY = torch.stack([points[:, 0], points[:, 1]], dim=0).numpy()
+        Z = gaussian_kde(XY)(XY)
+
+        # Sort the points by density, so that the densest points are plotted last
+        idx = Z.argsort()
+        X, Y, Z = X[idx], Y[idx], Z[idx]
+
+        ax.scatter(X, Y, c=Z, label=Z, alpha=alpha, cmap=cmap)
+        # ax.colorbar()
+        # ax.show()
+        # ax.close()
+
+    # def forward(self, x):
+    #     return self.log_prob(x)
 
 
-# Proposal
-class Cauchy:
-    def __init__(self, loc, scale):
-        self.loc = loc
-        self.scale = scale
-        self.dim = len(self.loc)
+class Cauchy(Distribution):
+    def __init__(self, **kwargs):
+
+        super().__init__(**kwargs)
+        self.loc = kwargs.get("loc")
+        self.scale = kwargs.get("scale")
+        self.dim = kwargs.get("dim")
         self.distr = torch.distributions.Cauchy(self.loc, self.scale)
 
-    def probability(self, x):
-        return self.distr.log_prob(z).mean(-1).log()
-
-    def log_prob(self, z):
-        log_target = self.distr.log_prob(z).sum(-1)#.mean(-1)
+    def log_prob(self, z, x=None):
+        log_target = self.distr.log_prob(z).sum(-1)
         return log_target
 
-    def sample(self, n=(1,)):
-        return self.distr.sample(n)
+    def sample(self, n=1):
+        return self.distr.sample(torch.cat([torch.empty(n)], -1).shape)
 
+    def visualize_dist(self, ax, s=1000, alpha=1.0, cmap="magma"):
+        """
+        Visualizes Cauchy distribution using sampled points
+        """
+        # Generate points from distribution
+        points = self.sample(s)
+        X = points[:, 0]
+        Y = points[:, 1]
+
+        # Calculate the point density
+        XY = torch.stack([points[:, 0], points[:, 1]], dim=0).numpy()
+        Z = gaussian_kde(XY)(XY)
+
+        # Sort the points by density, so that the densest points are plotted last
+        idx = Z.argsort()
+        X, Y, Z = X[idx], Y[idx], Z[idx]
+
+        ax.scatter(X, Y, c=Z, label=Z, alpha=alpha, cmap=cmap)
+
+    def visualize_dist_nf(self, ax, s=1000, alpha=1.0, nf = None, cmap="magma"):
+        """
+        Visualizes GMM distribution using sampled points and NF
+        """
+        # Generate points from distribution
+        points = self.sample(s)
+        if nf:
+          points = nf(points).detach()
+        X = points[:, 0]
+        Y = points[:, 1]
+
+        # Calculate the point density
+        XY = torch.stack([points[:, 0], points[:, 1]], dim=0).numpy()
+        Z = gaussian_kde(XY)(XY)
+
+        # Sort the points by density, so that the densest points are plotted last
+        idx = Z.argsort()
+        X, Y, Z = X[idx], Y[idx], Z[idx]
+
+        ax.scatter(X, Y, c=Z, label=Z, alpha=alpha, cmap=cmap)
+        # ax.colorbar()
+        # ax.show()
+        # ax.close()
