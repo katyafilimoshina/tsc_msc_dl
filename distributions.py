@@ -4,6 +4,7 @@ from torch.distributions import Normal, MultivariateNormal
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
 import torch.nn as nn
+import torch.distributions as D
 
 
 torch.manual_seed(926)
