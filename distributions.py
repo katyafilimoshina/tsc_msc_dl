@@ -3,6 +3,7 @@ import torch
 from torch.distributions import Normal, MultivariateNormal
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
+import torch.nn as nn
 
 
 torch.manual_seed(926)
